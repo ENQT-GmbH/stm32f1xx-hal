@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 use embedded_hal_02::adc::{Channel, OneShot};
 use fugit::HertzU32 as Hertz;
-use stm32f1::stm32f103::{EXTI, NVIC_STIR};
+use stm32f1::stm32f103::{Interrupt, EXTI, NVIC_STIR};
 
 #[cfg(all(feature = "stm32f103", any(feature = "high", feature = "xl")))]
 use crate::dma::dma2;
@@ -631,6 +631,35 @@ where
         Ok(res.into())
     }
 }
+
+
+impl Adc<pac::ADC1> {
+    /// unmasks the irq associated with the ADC
+    pub fn unmask_irq(&self) {
+        unsafe {
+            cortex_m::peripheral::NVIC::unmask(Interrupt::ADC1_2);
+        }
+    }
+}
+impl Adc<pac::ADC2> {
+    /// unmasks the irq associated with the ADC
+    pub fn unmask_irq(&self) {
+        unsafe {
+            cortex_m::peripheral::NVIC::unmask(Interrupt::ADC1_2);
+        }
+    }
+}
+
+#[cfg(all(feature = "stm32f103", any(feature = "high", feature = "xl")))]
+impl Adc<pac::ADC3> {
+    /// unmasks the irq associated with the ADC
+    pub fn unmask_irq(&self) {
+        unsafe {
+            cortex_m::peripheral::NVIC::unmask(Interrupt::ADC3);
+        }
+    }
+}
+
 
 impl Adc<pac::ADC1> {
     fn read_aux(&mut self, chan: u8) -> u16 {

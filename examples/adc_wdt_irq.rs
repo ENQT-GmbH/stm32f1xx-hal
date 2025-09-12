@@ -55,13 +55,9 @@ fn main() -> ! {
     hprintln!("sysclk freq: {}", rcc.clocks.sysclk());
     hprintln!("adc freq: {}", rcc.clocks.adcclk());
 
-    //unmask the interrupt for ADC1 and ADC2
-    unsafe {
-        cortex_m::peripheral::NVIC::unmask(Interrupt::ADC1_2);
-    }
-
     // Setup ADC
     let mut adc = p.ADC1.adc(&mut rcc);
+    adc.unmask_irq();
     //setup a pin to be read
     let mut gpioa = p.GPIOA.split(&mut rcc);
     let adc_pin = gpioa.pa0.into_analog(&mut gpioa.crl);
