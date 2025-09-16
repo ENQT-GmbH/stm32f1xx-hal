@@ -5,24 +5,25 @@ use core::cell::RefCell;
 
 use panic_halt as _;
 
-
-use cortex_m::{asm::wfi, interrupt::Mutex};
+use cortex_m::interrupt::Mutex;
 use stm32f1::stm32f103::ADC1;
-use stm32f1xx_hal::{self as hal, adc::{Adc, WatchdogChannelSelection}};
+use stm32f1xx_hal::{
+    self as hal,
+    adc::{Adc, WatchdogChannelSelection},
+};
 
-use cortex_m_rt::{entry};
+use cortex_m_rt::entry;
 
 use crate::hal::{
     gpio::PinExt,
-    pac::{interrupt, Interrupt, Peripherals},
+    pac::{interrupt, Peripherals},
     prelude::*,
     rcc,
 };
 use cortex_m_semihosting::hprintln;
 
-
-static G_ADC : Mutex<RefCell<Option<Adc<ADC1>>>> = Mutex::new(RefCell::new(None));
-static mut VREF : u16 = 0;
+static G_ADC: Mutex<RefCell<Option<Adc<ADC1>>>> = Mutex::new(RefCell::new(None));
+static mut VREF: u16 = 0;
 
 #[entry]
 fn main() -> ! {
@@ -68,16 +69,18 @@ fn main() -> ! {
     let higher = Adc::convert_from_m_volt(2500, vref);
     adc.set_watchdog_limits(lower, higher);
     adc.configure_watchdog_channel(WatchdogChannelSelection::AllRegular);
-    
+
     //Start continuous mode. Sample rate depends on adcclk and sample time
     adc.set_continuous_mode(true);
-    
+
     //switch on interrupt while making sure it doesn't fire before adc move is compleat
     //move adc to global variable to access it inside the interrupt
     cortex_m::interrupt::free(|cs| {
         adc.enable_awd_interrupt();
         *G_ADC.borrow(cs).borrow_mut() = Some(adc);
-        unsafe {VREF = vref;}
+        unsafe {
+            VREF = vref;
+        }
     });
     loop {
         //busy loop, wfi() would block swd
@@ -85,13 +88,16 @@ fn main() -> ! {
 }
 
 #[interrupt]
-fn ADC1_2(){
-    static mut ADC : Option<Adc<ADC1>> = None;
+fn ADC1_2() {
+    static mut ADC: Option<Adc<ADC1>> = None;
     //Move the ADC from the global static to the local one so no more locking is needed
-    let adc = ADC.get_or_insert_with(||
-        cortex_m::interrupt::free(|cs |G_ADC.borrow(cs).replace(None).unwrap())
-    );
+    let adc = ADC.get_or_insert_with(|| {
+        cortex_m::interrupt::free(|cs| G_ADC.borrow(cs).replace(None).unwrap())
+    });
     //If multiple interrupts sources were in use on the adc or use more then one adc check what happened and reset flags for handled interrupt sources
     //If multiple channels would be monitored the eoc interrupt could be used to keep track of where in the sequence the adc is
-    hprintln!("measurement result {}", Adc::convert_to_m_volt(adc.read_latest_regular_conversion_result(), unsafe {VREF}));
+    hprintln!(
+        "measurement result {}",
+        Adc::convert_to_m_volt(adc.read_latest_regular_conversion_result(), unsafe { VREF })
+    );
 }

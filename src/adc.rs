@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 use embedded_hal_02::adc::{Channel, OneShot};
 use fugit::HertzU32 as Hertz;
-use stm32f1::stm32f103::{Interrupt, EXTI, NVIC_STIR};
+use stm32f1::stm32f103::Interrupt;
 
 #[cfg(all(feature = "stm32f103", any(feature = "high", feature = "xl")))]
 use crate::dma::dma2;
@@ -219,7 +219,7 @@ impl<ADC: Instance> AdcExt for ADC {
     }
 }
 
-pub enum WatchdogChannelSelection{
+pub enum WatchdogChannelSelection {
     ///Watchdog is disabled
     None,
     ///Watchdog guards all injected channels
@@ -233,7 +233,7 @@ pub enum WatchdogChannelSelection{
     ///Watchdog guards the specified regular channel
     SingleRegular(u8),
     ///Watchdog guards the specified regular and injected channel
-    SingleRegularAndInjected(u8)
+    SingleRegularAndInjected(u8),
 }
 
 pub enum AdcEvent {
@@ -418,12 +418,12 @@ impl<ADC: Instance> Adc<ADC> {
     }
 
     /// Set injected channel sequence. Takes up to four channels
-    pub fn set_injected_sequence(&mut self, channels: &[u8]){
+    pub fn set_injected_sequence(&mut self, channels: &[u8]) {
         let mut iter = channels.chunks(4);
         unsafe {
-            if let Some(chunk) = iter.next(){
-                self.rb.jsqr().write(|w|{
-                    for (i,&c) in chunk.iter().enumerate(){
+            if let Some(chunk) = iter.next() {
+                self.rb.jsqr().write(|w| {
+                    for (i, &c) in chunk.iter().enumerate() {
                         w.jsq(i as u8).bits(c);
                     }
                     w.jl().set((channels.len() - 1) as u8)
@@ -433,11 +433,11 @@ impl<ADC: Instance> Adc<ADC> {
     }
 
     /// sets scan mode
-    pub fn set_scan_mode(&mut self, scan:bool){
+    pub fn set_scan_mode(&mut self, scan: bool) {
         self.rb.cr1().write(|w| w.scan().bit(scan));
     }
 
-    /// sets continuous mode 
+    /// sets continuous mode
     pub fn set_continuous_mode(&mut self, continuous: bool) {
         self.rb.cr2().write(|w| w.cont().bit(continuous));
     }
@@ -483,7 +483,7 @@ impl<ADC: Instance> Adc<ADC> {
         while self.rb.sr().read().eoc().bit_is_clear() {}
 
         let res = self.rb.dr().read().data().bits();
-        self.rb.sqr3().write(|w|unsafe {w.bits(old_seq)});
+        self.rb.sqr3().write(|w| unsafe { w.bits(old_seq) });
         res
     }
 
@@ -515,17 +515,17 @@ impl<ADC: Instance> Adc<ADC> {
     }
 
     /// Enable the interrupt for Analog Watchdog limit violation
-    pub fn enable_awd_interrupt(&mut self){
+    pub fn enable_awd_interrupt(&mut self) {
         self.rb.cr1().write(|w| w.awdie().set_bit());
     }
 
     /// Disable the interrupt for Analog Watchdog limit violation
-    pub fn disable_awd_interrupt(&mut self){
+    pub fn disable_awd_interrupt(&mut self) {
         self.rb.cr1().write(|w| w.awdie().set_bit());
     }
 
     /// Checks if the specified event is set. Multiple events can be set at the same time
-    pub fn is_event(&self, event : AdcEvent) -> bool{
+    pub fn is_event(&self, event: AdcEvent) -> bool {
         match event {
             AdcEvent::EOC => self.rb.sr().read().eoc().bit_is_set(),
             AdcEvent::JEOC => self.rb.sr().read().jeoc().bit_is_set(),
@@ -534,68 +534,69 @@ impl<ADC: Instance> Adc<ADC> {
     }
 
     /// Clears the specified event flag
-    pub fn clear_event(&self, event : AdcEvent){
-        self.rb.sr().write(|w|
-            match event {
-                AdcEvent::EOC => w.eoc().clear(),
-                AdcEvent::JEOC => w.jeoc().clear(),
-                AdcEvent::AWD => w.awd().clear(),
+    pub fn clear_event(&self, event: AdcEvent) {
+        self.rb.sr().write(|w| match event {
+            AdcEvent::EOC => w.eoc().clear(),
+            AdcEvent::JEOC => w.jeoc().clear(),
+            AdcEvent::AWD => w.awd().clear(),
         });
     }
 
     /// Sets limits for the analog watchdog
-    pub fn set_watchdog_limits(&mut self, lower: u16, higher: u16){
-        self.rb.htr().write(|w| unsafe {
-            w.bits(higher as u32 & 0xFFF)
-        });
-        self.rb.ltr().write(|w| unsafe {
-            w.bits(lower as u32 & 0xFFF)
-        });
+    pub fn set_watchdog_limits(&mut self, lower: u16, higher: u16) {
+        self.rb
+            .htr()
+            .write(|w| unsafe { w.bits(higher as u32 & 0xFFF) });
+        self.rb
+            .ltr()
+            .write(|w| unsafe { w.bits(lower as u32 & 0xFFF) });
     }
 
     /// gets the lower limit for the analog watchdog
-    pub fn get_watchdog_limit_lower(&self)->u16{
+    pub fn get_watchdog_limit_lower(&self) -> u16 {
         self.rb.ltr().read().lt().bits()
     }
 
     /// gets the upper limit for the analog watchdog
-    pub fn get_watchdog_limit_upper(&self)->u16{
+    pub fn get_watchdog_limit_upper(&self) -> u16 {
         self.rb.htr().read().ht().bits()
     }
 
     /// Configures analog watchdog channel
-    /// 
+    ///
     /// Range for channel is 0..=17, None disables the watchdog on regular channels
-    /// 
+    ///
     /// Use set_watchdog_limits to set limits, enable_awd_interrupt to enable the interrupt and is_awd_event to determine interrupt source.
-    /// 
+    ///
     /// If multiple channels are watched some external mechanism is needed to keep track of what channel beaks limits
-    pub fn configure_watchdog_channel(&mut self, channel_selection: WatchdogChannelSelection){
+    pub fn configure_watchdog_channel(&mut self, channel_selection: WatchdogChannelSelection) {
         let setting = match channel_selection {
-            WatchdogChannelSelection::None => (false,false,false,0),
-            WatchdogChannelSelection::AllInjected => (false,false,true,0),
-            WatchdogChannelSelection::AllRegular => (false,true,false,0),
-            WatchdogChannelSelection::ALL => (false,true,true,0),
+            WatchdogChannelSelection::None => (false, false, false, 0),
+            WatchdogChannelSelection::AllInjected => (false, false, true, 0),
+            WatchdogChannelSelection::AllRegular => (false, true, false, 0),
+            WatchdogChannelSelection::ALL => (false, true, true, 0),
             WatchdogChannelSelection::SingleInjected(ch) => (true, false, true, ch),
             WatchdogChannelSelection::SingleRegular(ch) => (true, true, false, ch),
             WatchdogChannelSelection::SingleRegularAndInjected(ch) => (true, true, true, ch),
         };
-        self.rb.cr1().write(|w|{
+        self.rb.cr1().write(|w| {
             w.awdsgl().bit(setting.0);
             w.awden().bit(setting.1);
             w.jawden().bit(setting.2);
-            unsafe { w.awdch().bits(setting.3);}
+            unsafe {
+                w.awdch().bits(setting.3);
+            }
             w
         });
     }
 
     /// Reads latest conversion result of regular channels
-    pub fn read_latest_regular_conversion_result(&self) -> u16{
+    pub fn read_latest_regular_conversion_result(&self) -> u16 {
         self.rb.dr().read().data().bits()
     }
 
     /// Reads latest conversion result of injected channels. Index range is 0..=3
-    pub fn read_latest_injected_conversion_result(&self, channel_index : usize) -> u16{
+    pub fn read_latest_injected_conversion_result(&self, channel_index: usize) -> u16 {
         self.rb.jdr(channel_index & 0x3).read().jdata().bits()
     }
 }
@@ -632,7 +633,6 @@ where
     }
 }
 
-
 impl Adc<pac::ADC1> {
     /// unmasks the irq associated with the ADC
     pub fn unmask_irq(&self) {
@@ -659,7 +659,6 @@ impl Adc<pac::ADC3> {
         }
     }
 }
-
 
 impl Adc<pac::ADC1> {
     fn read_aux(&mut self, chan: u8) -> u16 {
@@ -700,8 +699,8 @@ impl Adc<pac::ADC1> {
     /// `read_temp` and `read_vref` will still work with this disabled, but will take a
     /// bit longer since you have to wait for the sensor to start up.
     pub fn disable_temp_vref(&mut self) {
-            self.rb.cr2().modify(|_, w| w.tsvrefe().clear_bit());
-        }
+        self.rb.cr2().modify(|_, w| w.tsvrefe().clear_bit());
+    }
 
     pub fn is_temp_vref_enabled(&self) -> bool {
         self.rb.cr2().read().tsvrefe().bit_is_set()
@@ -772,16 +771,19 @@ impl Adc<pac::ADC1> {
     }
 
     /// Converts the a result to millivolt
-    pub fn convert_to_m_volt(channel_result: u16, vref_result: u16) -> u16{
+    pub fn convert_to_m_volt(channel_result: u16, vref_result: u16) -> u16 {
         //will always work because of mask. Shouldn't get incorrect results by masking because vref_result should be bigger then 1200
-        ((channel_result as u32 * 1200)/(vref_result as u32) & 0xFFFF).try_into().unwrap_or_default()
+        ((channel_result as u32 * 1200) / (vref_result as u32) & 0xFFFF)
+            .try_into()
+            .unwrap_or_default()
     }
 
-    /// Converts a millivolt value to a measurement result. Useful for setting watchdog limits 
-    pub fn convert_from_m_volt(millivolt: u16, vref_result: u16) -> u16{
-        (((millivolt as u32 * vref_result as u32)/1200)&0xFFFF).try_into().unwrap_or_default()
+    /// Converts a millivolt value to a measurement result. Useful for setting watchdog limits
+    pub fn convert_from_m_volt(millivolt: u16, vref_result: u16) -> u16 {
+        (((millivolt as u32 * vref_result as u32) / 1200) & 0xFFFF)
+            .try_into()
+            .unwrap_or_default()
     }
-
 }
 
 pub struct AdcPayload<ADC, PINS, MODE> {
