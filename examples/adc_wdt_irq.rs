@@ -1,6 +1,6 @@
 #![no_main]
 #![no_std]
-
+#![deny(unsafe_code)]
 use core::cell::RefCell;
 
 use panic_halt as _;
@@ -23,7 +23,7 @@ use crate::hal::{
 use cortex_m_semihosting::hprintln;
 
 static G_ADC: Mutex<RefCell<Option<Adc<ADC1>>>> = Mutex::new(RefCell::new(None));
-static mut VREF: u16 = 0;
+static G_VREF: Mutex<RefCell<Option<u16>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -78,9 +78,7 @@ fn main() -> ! {
     cortex_m::interrupt::free(|cs| {
         adc.enable_awd_interrupt();
         *G_ADC.borrow(cs).borrow_mut() = Some(adc);
-        unsafe {
-            VREF = vref;
-        }
+        *G_VREF.borrow(cs).borrow_mut() = Some(vref);
     });
     loop {
         //busy loop, wfi() would block swd
@@ -90,14 +88,20 @@ fn main() -> ! {
 #[interrupt]
 fn ADC1_2() {
     static mut ADC: Option<Adc<ADC1>> = None;
-    //Move the ADC from the global static to the local one so no more locking is needed
-    let adc = ADC.get_or_insert_with(|| {
+    static mut VREF : Option<u16> = None;
+    //Move the from the global statics to the local one so no more locking is needed
+    //This obviously only works if the globals are used nowhere else.
+    //If multiple interrupts are using those globals the interrupts have to be handled inside a critical section to prevent deadlocks
+    let adc = ADC.get_or_insert_with(|| 
         cortex_m::interrupt::free(|cs| G_ADC.borrow(cs).replace(None).unwrap())
-    });
+    );
+    let vref = VREF.get_or_insert_with(|| 
+        cortex_m::interrupt::free(|cs| G_VREF.borrow(cs).replace(None).unwrap())
+    );
     //If multiple interrupts sources were in use on the adc or use more then one adc check what happened and reset flags for handled interrupt sources
     //If multiple channels would be monitored the eoc interrupt could be used to keep track of where in the sequence the adc is
     hprintln!(
         "measurement result {}",
-        Adc::convert_to_m_volt(adc.read_latest_regular_conversion_result(), unsafe { VREF })
+        Adc::convert_to_m_volt(adc.read_latest_regular_conversion_result(), *vref)
     );
 }
